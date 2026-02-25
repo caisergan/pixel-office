@@ -7,7 +7,8 @@ import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js'
 import { setFloorSprites } from '../office/floorTiles.js'
 import { setWallSprites } from '../office/wallTiles.js'
 import { setCharacterTemplates } from '../office/sprites/spriteData.js'
-import { vscode } from '../vscodeApi.js'
+import { vscode, isVsCodeApiAvailable } from '../vscodeApi.js'
+import { wsClient } from '../wsClient.js'
 import { playDoneSound, setSoundEnabled } from '../notificationSound.js'
 
 export interface SubagentCharacter {
@@ -76,7 +77,7 @@ export function useExtensionMessages(
     // Buffer agents from existingAgents until layout is loaded
     let pendingAgents: Array<{ id: number; palette?: number; hueShift?: number; seatId?: string }> = []
 
-    const handler = (e: MessageEvent) => {
+    const handler = (e: MessageEvent | { data: any }) => {
       const msg = e.data
       const os = getOfficeState()
 
@@ -343,9 +344,20 @@ export function useExtensionMessages(
         }
       }
     }
-    window.addEventListener('message', handler)
-    vscode.postMessage({ type: 'webviewReady' })
-    return () => window.removeEventListener('message', handler)
+
+    if (isVsCodeApiAvailable()) {
+      window.addEventListener('message', handler)
+      vscode.postMessage({ type: 'webviewReady' })
+      return () => window.removeEventListener('message', handler)
+    } else {
+      console.log('🔌 Connecting to WebSocket server...')
+      wsClient.connect()
+      const removeHandler = wsClient.addMessageHandler(handler)
+      return () => {
+        removeHandler()
+        wsClient.disconnect()
+      }
+    }
   }, [getOfficeState])
 
   return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets }
